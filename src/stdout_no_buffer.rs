@@ -1,9 +1,11 @@
 // https://www.reddit.com/r/rust/comments/6hoayo/how_do_i_write_to_stdout_without_line_buffering/
 
 #[cfg(unix)]
-pub fn stdout() -> std::io::File {
+pub fn stdout() -> std::fs::File {
     use std::os::unix::io::FromRawFd;
-    std::fs::File::from_raw_fd(1)
+    unsafe {
+        std::fs::File::from_raw_fd(1)
+    }
 }
 
 #[cfg(windows)]
