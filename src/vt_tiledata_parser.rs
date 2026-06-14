@@ -43,6 +43,9 @@ impl Parser {
     }
 
     pub fn feed(&mut self, byte: u8) -> FeedResult {
+        // eprintln!("Buffer: {:?}", self.buffer);
+        // eprintln!("State: {:?}", self.state);
+        // eprintln!("Feeding: {:?}", byte);
         match self.state {
             ParserState::Outside => {
                 if byte != b'\x1B'  {
@@ -84,9 +87,13 @@ impl Parser {
                     let num_result  = num_as_string.parse::<usize>();
                     match num_result {
                         Ok(num) => {
+                            self.buffer.clear();
+                            self.state = ParserState::Outside;
                             return FeedResult::Glyph(num);
                         },
                         Err(_) => {
+                            // eprintln!("Error parsing number? {:?}", num_as_string);
+                            // eprintln!("Buffer was {:?}", self.buffer);
                             return self.not_us();
                         }
                     }
