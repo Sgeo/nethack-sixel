@@ -3,11 +3,15 @@ use std::io;
 use std::io::Read;
 use std::io::Write;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
+use image::ImageReader;
+use icy_sixel::EncodeOptions;
 
 mod vt_tiledata_parser;
 
 mod stdout_no_buffer;
+
+mod sixelfix;
 
 use vt_tiledata_parser::FeedResult;
 
@@ -15,47 +19,37 @@ use std::fs::File;
 
 
 
-const NUM_TILES: usize = 60*40;
+const NUM_ROWS: u32 = 60;
+const NUM_COLS: u32 = 40;
+const NUM_TILES: usize = (NUM_ROWS * NUM_COLS) as usize;
 
-struct EscTransformer {
-    buffer: Vec<u8>,
-    inside_esc: bool,
-    inside_hidden: bool
-}
-
-impl EscTransformer {
-    fn new() -> Self {
-        EscTransformer { buffer: Vec::new(), inside_esc: false, inside_hidden: false }
-    }
-
-    fn transform<R: Read, W: Write>(&mut self, reader: &mut R, writer: &mut W) {
-        
-    }
-
-}
 
 fn main() -> anyhow::Result<()> {
     println!("Hello, world!");
+    let args = std::env::args().collect::<Vec<String>>();
+    let size_string = args.get(2).context("Tile size needs to be provided")?;
+    let sizes = size_string.split("x").collect::<Vec<&str>>();
+    if sizes.len() != 2  {
+        bail!("Tile size should be WxH");
+    }
+    let tile_width = sizes[0].parse::<u32>().context("Width needs to be a number")?;
+    let tile_height = sizes[1].parse::<u32>().context("Height needs to be a number")?;
+
     let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
-    for entry in fs::read_dir(".")? {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        let file_name = file_name.to_str().context("Unable to use to_str")?;
-        if file_name.starts_with("tile_") && file_name.ends_with(".sixel") {
-            //println!("Found {}", file_name);
-            let maybe_number: Result<usize, _> = file_name.strip_prefix("tile_").context("Missing tile_ prefix")?.strip_suffix(".sixel").context("Missing .sixel suffix")?.parse();
-            if maybe_number.is_err() {
-                continue;
-            }
-            let number = maybe_number.expect("We skipped err, how did this happen?");
+    let imagereader = ImageReader::open(args.get(1).context("Missing tileset argument")?)?;
+    let image = imagereader.with_guessed_format().context("Unable to determine tileset format")?.decode()?;
 
-            if number < NUM_TILES {
-                let data = fs::read(entry.path())?;
-                tile_images[number] = data.leak();
-            }
-
+    for y in 0..NUM_ROWS {
+        for x in 0..NUM_COLS {
+            let tile_image = image.crop_imm(x * tile_width, y * tile_height, tile_width, tile_height);
+            let tile_image = tile_image.resize_exact(10, 20, image::imageops::Gaussian);
+            let pixels = tile_image.into_rgba8().into_raw();
+            let mut sixel = icy_sixel::encoder::sixel_encode(&pixels, 10, 20, &EncodeOptions::default())?;
+            sixelfix::remove_newline(&mut sixel);
+            tile_images[(y * NUM_COLS + x) as usize] = sixel.into_bytes().leak();
         }
     }
+    
     println!("Loaded sixels!");
 
 
@@ -63,6 +57,13 @@ fn main() -> anyhow::Result<()> {
     //let mut stdout_lock = io::stdout().lock();
     let mut stdout_lock = stdout_no_buffer::stdout();
     let mut parser = vt_tiledata_parser::Parser::new();
+
+    // Testing purposes only
+
+    // stdout_lock.write_all(tile_images[0])?;
+    // stdout_lock.write_all(b"\x1B[C")?;
+    // stdout_lock.write_all(tile_images[1])?;
+
     for byte_result in stdin_lock.bytes() {
         let byte = byte_result?;
         let result = parser.feed(byte);
@@ -76,6 +77,7 @@ fn main() -> anyhow::Result<()> {
             FeedResult::Glyph(glyph) => {
                 if glyph <= NUM_TILES {
                     stdout_lock.write_all(tile_images[glyph])?;
+                    stdout_lock.write_all(b"\x1B[C")?;
                     //stdout_lock.write_all(&[byte])?;
                 } else {
                     stdout_lock.write_all(&[b'?'])?;
