@@ -1,11 +1,9 @@
-use std::fs;
 use std::io;
 use std::io::Read;
 use std::io::Write;
 
 use anyhow::{Context, bail};
 use image::ImageReader;
-use icy_sixel::EncodeOptions;
 
 mod vt_tiledata_parser;
 
@@ -13,9 +11,10 @@ mod stdout_no_buffer;
 
 mod sixelfix;
 
+mod kgp;
+
 use vt_tiledata_parser::FeedResult;
 
-use std::fs::File;
 
 
 
@@ -35,36 +34,36 @@ fn main() -> anyhow::Result<()> {
     let tile_width = sizes[0].parse::<u32>().context("Width needs to be a number")?;
     let tile_height = sizes[1].parse::<u32>().context("Height needs to be a number")?;
 
-    let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
-    let imagereader = ImageReader::open(args.get(1).context("Missing tileset argument")?)?;
-    let image = imagereader.with_guessed_format().context("Unable to determine tileset format")?.decode()?;
+    let tileset_filename = args.get(1).context("Missing tileset argument")?;
 
-    for y in 0..NUM_ROWS {
-        for x in 0..NUM_COLS {
-            let tile_image = image.crop_imm(x * tile_width, y * tile_height, tile_width, tile_height);
-            let tile_image = tile_image.resize_exact(10, 20, image::imageops::Gaussian);
-            let pixels = tile_image.into_rgba8().into_raw();
-            let mut sixel = icy_sixel::encoder::sixel_encode(&pixels, 10, 20, &EncodeOptions::default())?;
-            sixelfix::remove_newline(&mut sixel);
-            tile_images[(y * NUM_COLS + x) as usize] = sixel.into_bytes().leak();
-        }
-    }
+    let tileset_filename = std::fs::canonicalize(tileset_filename)?.into_os_string();
+
+    // let imagereader = ImageReader::open(?)?;
+    // let image = imagereader.with_guessed_format().context("Unable to determine tileset format")?.decode()?;
+    // let image_width = image.width();
+    // let image_height = image.height();
+
+    // let tileset_pixels = image.into_rgba8().into_raw();
+
     
-    println!("Loaded sixels!");
-
-
+    
+    
     let stdin_lock = io::stdin().lock();
     //let mut stdout_lock = io::stdout().lock();
     let mut stdout_lock = stdout_no_buffer::stdout();
     let mut parser = vt_tiledata_parser::Parser::new();
+    
+    kgp::upload_image_filename(&mut stdout_lock, 1, &tileset_filename)?;
+    //kgp::upload_image_hardcoded(&mut stdout_lock)?;
+    println!("Loaded tileset!");
 
     // Testing purposes only
 
-    // stdout_lock.write_all(tile_images[0])?;
-    // stdout_lock.write_all(b"\x1B[C")?;
-    // stdout_lock.write_all(tile_images[1])?;
+    kgp::place_sprite(&mut stdout_lock, 1, 0, 0, tile_width, tile_height)?;
+    stdout_lock.write_all(b"\x1B[C")?;
 
     for byte_result in stdin_lock.bytes() {
+        //std::thread::sleep(std::time::Duration::from_micros(100));
         let byte = byte_result?;
         let result = parser.feed(byte);
         match result {
@@ -73,10 +72,17 @@ fn main() -> anyhow::Result<()> {
             },
             FeedResult::Bytes(bytes) => {
                 stdout_lock.write_all(bytes.as_slice())?;
+                //eprintln!("{:?}", bytes);
+                if bytes.starts_with(b"\x1B[") && bytes.ends_with(b"J") {
+                    kgp::upload_image_filename(&mut stdout_lock, 1, &tileset_filename)?;
+                }
             },
             FeedResult::Glyph(glyph) => {
                 if glyph <= NUM_TILES {
-                    stdout_lock.write_all(tile_images[glyph])?;
+                    let tile_row = glyph / (NUM_COLS as usize);
+                    let tile_col = glyph % (NUM_COLS as usize);
+                    kgp::place_sprite(&mut stdout_lock, 1, tile_width * tile_col as u32, tile_height * tile_row as u32, tile_width, tile_height)?;
+                    //kgp::place_sprite(&mut stdout_lock, 1, 0, 0, tile_width, tile_height)?;
                     stdout_lock.write_all(b"\x1B[C")?;
                     //stdout_lock.write_all(&[byte])?;
                 } else {
