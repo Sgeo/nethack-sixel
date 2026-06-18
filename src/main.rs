@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -13,9 +14,13 @@ mod stdout_no_buffer;
 
 mod sixelfix;
 
+mod protocol;
+
 use vt_tiledata_parser::FeedResult;
 
 use std::fs::File;
+
+use crate::protocol::Protocol;
 
 
 
@@ -64,26 +69,18 @@ fn main() -> anyhow::Result<()> {
     let tile_width = sizes[0].parse::<u32>().context("Width needs to be a number")?;
     let tile_height = sizes[1].parse::<u32>().context("Height needs to be a number")?;
 
-    let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
-    let imagereader = ImageReader::open(args.get(1).context("Missing tileset argument")?)?;
-    let image = imagereader.with_guessed_format().context("Unable to determine tileset format")?.decode()?;
+    let tiles_filename: OsString = args.get(1).context("Missing tileset argument")?.into();
 
-    for y in 0..NUM_ROWS {
-        for x in 0..NUM_COLS {
-            let tile_image = image.crop_imm(x * tile_width, y * tile_height, tile_width, tile_height);
-            let tile_image = tile_image.resize_exact(10, 20, image::imageops::Gaussian);
-            let pixels = tile_image.into_rgba8().into_raw();
-            let mut sixel = icy_sixel::encoder::sixel_encode(&pixels, 10, 20, &EncodeOptions::default())?;
-            sixelfix::remove_newline(&mut sixel);
-            tile_images[(y * NUM_COLS + x) as usize] = sixel.into_bytes().leak();
-        }
-    }
+    let mut protocol = protocol::sixels::Sixels::new(&tiles_filename, tile_width, tile_height)?;
 
-    let mut green_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 255, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
-    sixelfix::remove_newline(&mut green_cursor);
+    // let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
 
-    let mut black_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 0, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
-    sixelfix::remove_newline(&mut black_cursor);
+
+    // let mut green_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 255, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
+    // sixelfix::remove_newline(&mut green_cursor);
+
+    // let mut black_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 0, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
+    // sixelfix::remove_newline(&mut black_cursor);
     
     println!("Loaded sixels!");
 
@@ -102,7 +99,7 @@ fn main() -> anyhow::Result<()> {
     for byte_result in stdin_lock.bytes() {
         let byte = byte_result?;
         let result = parser.feed(byte);
-        stdout_lock.write_all(&black_cursor.as_bytes())?;
+        //stdout_lock.write_all(&black_cursor.as_bytes())?;
         match result {
             FeedResult::Byte(byte) => {
                 stdout_lock.write_all(&[byte])?;
@@ -112,17 +109,12 @@ fn main() -> anyhow::Result<()> {
             },
             FeedResult::Glyph(glyph) => {
                 if glyph <= NUM_TILES {
-                    stdout_lock.write_all(tile_images[glyph])?;
-                    stdout_lock.write_all(&black_cursor.as_bytes())?;
-                    stdout_lock.write_all(b"\x1B[C")?;
-                    //stdout_lock.write_all(&[byte])?;
-                } else {
-                    stdout_lock.write_all(&[b'?'])?;
+                    protocol.draw_glyph(&mut stdout_lock, glyph as u32)?
                 }
             },
             FeedResult::Unknown => {}
         }
-        stdout_lock.write_all(&green_cursor.as_bytes())?;
+        //stdout_lock.write_all(&green_cursor.as_bytes())?;
     }
 
     Ok(())
