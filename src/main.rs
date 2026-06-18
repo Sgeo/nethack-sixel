@@ -23,6 +23,35 @@ const NUM_ROWS: u32 = 60;
 const NUM_COLS: u32 = 40;
 const NUM_TILES: usize = (NUM_ROWS * NUM_COLS) as usize;
 
+fn generate_cursor_pixels(r: u8, b: u8, g: u8, width: usize, height: usize) -> Vec<u8> {
+    let mut pixels: Vec<u8> = vec![0x00; width * height * 4];
+    for i in 0..width {
+        pixels[4 * i] = r;
+        pixels[4 * i + 1] = g;
+        pixels[4 * i + 2] = b;
+        pixels[4 * i + 3] = 255;
+
+        pixels[4 * width * (height - 1) + 4 * i] = r;
+        pixels[4 * width * (height - 1) + 4 * i + 1] = g;
+        pixels[4 * width * (height - 1) + 4 * i + 2] = b;
+        pixels[4 * width * (height - 1) + 4 * i + 3] = 255;
+    }
+
+    for i in 0..height {
+        pixels[4 * width * i] = r;
+        pixels[4 * width * i + 1] = g;
+        pixels[4 * width * i + 2] = b;
+        pixels[4 * width * i + 3] = 255;
+
+        pixels[4 * width * i + 4 * (width - 1)] = r;
+        pixels[4 * width * i + 4 * (width - 1) + 1] = g;
+        pixels[4 * width * i + 4 * (width - 1) + 2] = b;
+        pixels[4 * width * i + 4 * (width - 1) + 3] = 255;
+    }
+
+    pixels
+}
+
 
 fn main() -> anyhow::Result<()> {
     println!("Hello, world!");
@@ -49,6 +78,12 @@ fn main() -> anyhow::Result<()> {
             tile_images[(y * NUM_COLS + x) as usize] = sixel.into_bytes().leak();
         }
     }
+
+    let mut green_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 255, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
+    sixelfix::remove_newline(&mut green_cursor);
+
+    let mut black_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 0, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
+    sixelfix::remove_newline(&mut black_cursor);
     
     println!("Loaded sixels!");
 
@@ -67,6 +102,7 @@ fn main() -> anyhow::Result<()> {
     for byte_result in stdin_lock.bytes() {
         let byte = byte_result?;
         let result = parser.feed(byte);
+        stdout_lock.write_all(&black_cursor.as_bytes())?;
         match result {
             FeedResult::Byte(byte) => {
                 stdout_lock.write_all(&[byte])?;
@@ -77,6 +113,7 @@ fn main() -> anyhow::Result<()> {
             FeedResult::Glyph(glyph) => {
                 if glyph <= NUM_TILES {
                     stdout_lock.write_all(tile_images[glyph])?;
+                    stdout_lock.write_all(&black_cursor.as_bytes())?;
                     stdout_lock.write_all(b"\x1B[C")?;
                     //stdout_lock.write_all(&[byte])?;
                 } else {
@@ -85,6 +122,7 @@ fn main() -> anyhow::Result<()> {
             },
             FeedResult::Unknown => {}
         }
+        stdout_lock.write_all(&green_cursor.as_bytes())?;
     }
 
     Ok(())
