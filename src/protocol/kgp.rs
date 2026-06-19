@@ -45,14 +45,14 @@ impl Protocol for KGP {
     }
 
     fn draw_cursor(&mut self, write: &mut dyn Write) -> anyhow::Result<()> {
-        //write!(write, "\x1B_Ga=p,q=2,c=1,r=1,C=1,i=2,z=-1,p=1\x1B\\")?;
-        write!(write, "\u{2591}\x1B[D")?;
+        write!(write, "\x1B_Ga=p,q=2,c=1,r=1,C=1,i=2,z=-1,p=1\x1B\\")?;
+        //write!(write, "\u{2591}\x1B[D")?;
 
         Ok(())
     }
 
     fn undraw_cursor(&mut self, write: &mut dyn Write) -> anyhow::Result<()> {
-        write!(write, " \x1B[D")?;
+        //write!(write, " \x1B[D")?;
 
         Ok(())
     }
