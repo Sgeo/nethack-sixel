@@ -11,7 +11,7 @@ pub struct Sixels {
 }
 
 impl Protocol for Sixels {
-    fn new(path: &std::ffi::OsStr, tile_width: u32, tile_height: u32) -> anyhow::Result<Self> where Self: Sized {
+    fn new(path: &std::ffi::OsStr, _write: &mut dyn Write, tile_width: u32, tile_height: u32) -> anyhow::Result<Self> where Self: Sized {
         let mut this = Sixels {
             tile_images: vec![&[]; NUM_TILES]
         };
@@ -47,7 +47,7 @@ impl Protocol for Sixels {
         Ok(())
     }
 
-    fn draw_cursor(&mut self, write: &mut dyn Write, glyph: u32) -> anyhow::Result<()> {
+    fn draw_cursor(&mut self, write: &mut dyn Write) -> anyhow::Result<()> {
         todo!()
     }
 }

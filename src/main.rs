@@ -71,25 +71,25 @@ fn main() -> anyhow::Result<()> {
 
     let tiles_filename: OsString = args.get(1).context("Missing tileset argument")?.into();
 
-    let mut protocol = protocol::it2::IT2::new(&tiles_filename, tile_width, tile_height)?;
-
+    
     // let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
-
-
+    
+    
     // let mut green_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 255, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
     // sixelfix::remove_newline(&mut green_cursor);
-
+    
     // let mut black_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 0, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
     // sixelfix::remove_newline(&mut black_cursor);
     
     println!("Loaded sixels!");
-
-
+    
+    
     let stdin_lock = io::stdin().lock();
     //let mut stdout_lock = io::stdout().lock();
     let mut stdout_lock = stdout_no_buffer::stdout();
     let mut parser = vt_tiledata_parser::Parser::new();
-
+    
+    let mut protocol = protocol::kgp::KGP::new(&tiles_filename, &mut stdout_lock, tile_width, tile_height)?;
     // Testing purposes only
 
     // stdout_lock.write_all(tile_images[0])?;
@@ -101,12 +101,19 @@ fn main() -> anyhow::Result<()> {
         let byte = byte_result?;
         let result = parser.feed(byte);
         //stdout_lock.write_all(&black_cursor.as_bytes())?;
+        protocol.undraw_cursor(&mut stdout_lock)?;
         match result {
             FeedResult::Byte(byte) => {
+                if 32 <= byte && byte <= 127 {
+                    protocol.erase_glyph(&mut stdout_lock)?;
+                }
                 stdout_lock.write_all(&[byte])?;
             },
             FeedResult::Bytes(bytes) => {
                 stdout_lock.write_all(bytes.as_slice())?;
+                if bytes.starts_with(b"\x1B[") && bytes.ends_with(b"J") {
+                    protocol.screen_was_reset(&mut stdout_lock)?;
+                }
             },
             FeedResult::Glyph(glyph) => {
                 if glyph <= NUM_TILES {
@@ -115,7 +122,7 @@ fn main() -> anyhow::Result<()> {
             },
             FeedResult::Unknown => {}
         }
-        //stdout_lock.write_all(&green_cursor.as_bytes())?;
+        protocol.draw_cursor(&mut stdout_lock)?;
     }
 
     Ok(())
