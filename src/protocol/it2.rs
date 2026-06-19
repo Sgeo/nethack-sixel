@@ -26,7 +26,7 @@ impl Protocol for IT2 {
                 let mut it2_data = Vec::new();
                 let image_data = Vec::new();
                 let mut cursor = Cursor::new(image_data);
-                tile_image.write_to(&mut cursor, image::ImageFormat::Png)?;
+                tile_image.write_to(&mut cursor, image::ImageFormat::Bmp)?;
                 let tile_image_string = BASE64_STANDARD.encode(cursor.into_inner());
                 write!(&mut it2_data, "\x1B]1337;File=width=1;height=1;preserveAspectRatio=0;inline=1:{}\x1B\\", tile_image_string)?;
                 this.tiledata.push(it2_data.leak());
