@@ -2,6 +2,7 @@ use std::io::Write;
 
 
 pub mod sixels;
+pub mod it2;
 
 pub trait Protocol {
     // Application start-up

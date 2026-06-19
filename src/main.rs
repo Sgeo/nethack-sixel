@@ -71,7 +71,7 @@ fn main() -> anyhow::Result<()> {
 
     let tiles_filename: OsString = args.get(1).context("Missing tileset argument")?.into();
 
-    let mut protocol = protocol::sixels::Sixels::new(&tiles_filename, tile_width, tile_height)?;
+    let mut protocol = protocol::it2::IT2::new(&tiles_filename, tile_width, tile_height)?;
 
     // let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
 
@@ -97,6 +97,7 @@ fn main() -> anyhow::Result<()> {
     // stdout_lock.write_all(tile_images[1])?;
 
     for byte_result in stdin_lock.bytes() {
+        //std::thread::sleep(std::time::Duration::from_millis(1));
         let byte = byte_result?;
         let result = parser.feed(byte);
         //stdout_lock.write_all(&black_cursor.as_bytes())?;
