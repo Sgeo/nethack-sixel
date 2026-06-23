@@ -16,6 +16,10 @@ mod sixelfix;
 
 mod protocol;
 
+use vt_push_parser::VTPushParser;
+use vt_push_parser::event::CSI;
+use vt_push_parser::event::VTEvent;
+use vt_push_parser::event::VTEvent::Csi;
 use vt_tiledata_parser::FeedResult;
 
 use std::fs::File;
@@ -87,7 +91,7 @@ fn main() -> anyhow::Result<()> {
     let stdin_lock = io::stdin().lock();
     //let mut stdout_lock = io::stdout().lock();
     let mut stdout_lock = stdout_no_buffer::stdout();
-    let mut parser = vt_tiledata_parser::Parser::new();
+    let mut parser = VTPushParser::new();
     
     let mut protocol = protocol::kgp::KGP::new(&tiles_filename, &mut stdout_lock, tile_width, tile_height)?;
     // Testing purposes only
@@ -96,33 +100,61 @@ fn main() -> anyhow::Result<()> {
     // stdout_lock.write_all(b"\x1B[C")?;
     // stdout_lock.write_all(tile_images[1])?;
 
+    let mut current_glyph: Option<u32> = None;
+
+
     for byte_result in stdin_lock.bytes() {
         //std::thread::sleep(std::time::Duration::from_millis(1));
         let byte = byte_result?;
-        let result = parser.feed(byte);
-        //stdout_lock.write_all(&black_cursor.as_bytes())?;
-        protocol.undraw_cursor(&mut stdout_lock)?;
-        match result {
-            FeedResult::Byte(byte) => {
-                if 32 <= byte && byte <= 127 {
-                    protocol.erase_glyph(&mut stdout_lock)?;
-                }
-                stdout_lock.write_all(&[byte])?;
+        match current_glyph {
+            None => {
+                parser.feed_with(&[byte], |event: VTEvent| {
+                    protocol.undraw_cursor(&mut stdout_lock);
+                    match event {
+                        VTEvent::Raw(bytes) => {
+                            for byte in bytes {
+                                if &32 <= byte && byte <= &127 {
+                                    protocol.erase_glyph(&mut stdout_lock);
+                                }
+                                stdout_lock.write_all(&[*byte]);
+                            }
+                        },
+                        VTEvent::Csi(CSI {final_byte: b'J', ..})  => {
+                            protocol.screen_was_reset(&mut stdout_lock);
+                        },
+                        VTEvent::Csi(csi@CSI {final_byte: b'z', ..}) => {
+                            let params: Vec<Result<u32, _>> = csi.params.into_iter().map(|param| String::from_utf8_lossy(param).parse()).collect();
+
+                            if let (Some(Ok(1)), Some(Ok(0)), Some(Ok(glyph_num)), Some(Ok(flags))) = (params.get(0), params.get(1), params.get(2), params.get(3)) {
+                                current_glyph = Some(*glyph_num as u32);
+                            }
+                        },
+                        event => {
+                            event.write_to(&mut stdout_lock);
+                        }
+                    }
+                    protocol.draw_cursor(&mut stdout_lock);
+                });
             },
-            FeedResult::Bytes(bytes) => {
-                stdout_lock.write_all(bytes.as_slice())?;
-                if bytes.starts_with(b"\x1B[") && bytes.ends_with(b"J") {
-                    protocol.screen_was_reset(&mut stdout_lock)?;
-                }
-            },
-            FeedResult::Glyph(glyph) => {
-                if glyph <= NUM_TILES {
-                    protocol.draw_glyph(&mut stdout_lock, glyph as u32)?
-                }
-            },
-            FeedResult::Unknown => {}
+            Some(glyph) => {
+                parser.feed_with(&[byte], |event: VTEvent| {
+                    match event {
+                        VTEvent::Csi(csi@CSI {final_byte: b'z', ..}) => {
+                            let params: Vec<Result<u32, _>> = csi.params.into_iter().map(|param| String::from_utf8_lossy(param).parse()).collect();
+                            if let (Some(Ok(1)), Some(Ok(1))) = (params.get(0), params.get(1)) {
+                                current_glyph = None;
+                                if glyph <= NUM_TILES as u32 {
+                                    protocol.draw_glyph(&mut stdout_lock, glyph);
+                                }
+                            }
+                        },
+                        _ => {}
+                    }
+                });
+            }
         }
-        protocol.draw_cursor(&mut stdout_lock)?;
+
+        //stdout_lock.write_all(&black_cursor.as_bytes())?;
     }
 
     Ok(())
