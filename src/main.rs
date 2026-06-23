@@ -109,7 +109,7 @@ fn main() -> anyhow::Result<()> {
         match current_glyph {
             None => {
                 parser.feed_with(&[byte], |event: VTEvent| {
-                    protocol.undraw_cursor(&mut stdout_lock);
+                    //protocol.undraw_cursor(&mut stdout_lock);
                     match event {
                         VTEvent::Raw(bytes) => {
                             for byte in bytes {
@@ -119,7 +119,8 @@ fn main() -> anyhow::Result<()> {
                                 stdout_lock.write_all(&[*byte]);
                             }
                         },
-                        VTEvent::Csi(CSI {final_byte: b'J', ..})  => {
+                        event@VTEvent::Csi(CSI {final_byte: b'J', ..})  => {
+                            event.write_to(&mut stdout_lock);
                             protocol.screen_was_reset(&mut stdout_lock);
                         },
                         VTEvent::Csi(csi@CSI {final_byte: b'z', ..}) => {
@@ -133,7 +134,7 @@ fn main() -> anyhow::Result<()> {
                             event.write_to(&mut stdout_lock);
                         }
                     }
-                    protocol.draw_cursor(&mut stdout_lock);
+                    //protocol.draw_cursor(&mut stdout_lock);
                 });
             },
             Some(glyph) => {
@@ -144,6 +145,7 @@ fn main() -> anyhow::Result<()> {
                             if let (Some(Ok(1)), Some(Ok(1))) = (params.get(0), params.get(1)) {
                                 current_glyph = None;
                                 if glyph <= NUM_TILES as u32 {
+                                    protocol.erase_glyph(&mut stdout_lock);
                                     protocol.draw_glyph(&mut stdout_lock, glyph);
                                 }
                             }
