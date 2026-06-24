@@ -8,6 +8,7 @@ anyhow = "1"
 base64 = "0.22.1"
 icy_sixel = "0.5.0"
 image = "0.25.10"
+vt-push-parser = "0.13.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = [ "winbase", "processenv" ] }
