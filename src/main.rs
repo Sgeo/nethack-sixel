@@ -63,9 +63,8 @@ fn generate_cursor_pixels(r: u8, b: u8, g: u8, width: usize, height: usize) -> V
 
 
 fn main() -> anyhow::Result<()> {
-    println!("Hello, world!");
     let args = std::env::args().collect::<Vec<String>>();
-    let size_string = args.get(2).context("Tile size needs to be provided")?;
+    let size_string = args.get(3).context("Tile size needs to be provided")?;
     let sizes = size_string.split("x").collect::<Vec<&str>>();
     if sizes.len() != 2  {
         bail!("Tile size should be WxH");
@@ -73,7 +72,9 @@ fn main() -> anyhow::Result<()> {
     let tile_width = sizes[0].parse::<u32>().context("Width needs to be a number")?;
     let tile_height = sizes[1].parse::<u32>().context("Height needs to be a number")?;
 
-    let tiles_filename: OsString = args.get(1).context("Missing tileset argument")?.into();
+    let tiles_filename: OsString = args.get(2).context("Missing tileset argument")?.into();
+
+    let protocol_name: String = args.get(1).context("Missing protocol argument")?.into();
 
     
     // let mut tile_images: [&'static [u8]; NUM_TILES] = [&[]; NUM_TILES];
@@ -85,7 +86,6 @@ fn main() -> anyhow::Result<()> {
     // let mut black_cursor = icy_sixel::encoder::sixel_encode(&generate_cursor_pixels(0, 0, 0, 10 as usize, 20 as usize), 10 as usize, 20 as usize, &EncodeOptions::default())?;
     // sixelfix::remove_newline(&mut black_cursor);
     
-    println!("Loaded sixels!");
     
     
     let stdin_lock = io::stdin().lock();
@@ -93,7 +93,12 @@ fn main() -> anyhow::Result<()> {
     let mut stdout_lock = stdout_no_buffer::stdout();
     let mut parser = VTPushParser::new();
     
-    let mut protocol = protocol::kgp::KGP::new(&tiles_filename, &mut stdout_lock, tile_width, tile_height)?;
+    let mut protocol: Box<dyn protocol::Protocol> = match protocol_name.as_str() {
+        "sixel" => Box::new(protocol::sixels::Sixels::new(&tiles_filename, &mut stdout_lock, tile_width, tile_height).expect("Unable to create protocol")),
+        "it2" => Box::new(protocol::it2::IT2::new(&tiles_filename, &mut stdout_lock, tile_width, tile_height).expect("Unable to create protocol")),
+        "kgp" => Box::new(protocol::kgp::KGP::new(&tiles_filename, &mut stdout_lock, tile_width, tile_height).expect("Unable to create protocol")),
+        _ => bail!("Incorrect protocol given!")
+    };
     // Testing purposes only
 
     // stdout_lock.write_all(tile_images[0])?;
